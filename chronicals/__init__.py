@@ -58,6 +58,9 @@ def __getattr__(name):
     elif name == "resolve_compile_decision":
         from chronicals.training import resolve_compile_decision
         return resolve_compile_decision
+    elif name == "load_adapter_checkpoint":
+        from chronicals.training import load_adapter_checkpoint
+        return load_adapter_checkpoint
     raise AttributeError(f"module 'chronicals' has no attribute '{name}'")
 
 
@@ -123,6 +126,7 @@ __all__ = [
     "apply_qwen_loftq_fallback",
     "resolve_adapter_init_plan",
     "resolve_compile_decision",
+    "load_adapter_checkpoint",
     "get_version",
     "get_device_info",
     "print_info",

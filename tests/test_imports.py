@@ -116,6 +116,16 @@ class TestTrainingImports:
         from chronicals.training import ChronicalsTrainer
         assert ChronicalsTrainer is not None
 
+    def test_import_compile_policy_helper(self):
+        """Test compile policy helper import."""
+        from chronicals.training import resolve_compile_decision
+        assert resolve_compile_decision is not None
+
+    def test_import_checkpoint_helper(self):
+        """Test adapter checkpoint helper import."""
+        from chronicals.training import load_adapter_checkpoint
+        assert load_adapter_checkpoint is not None
+
 
 class TestLazyImports:
     """Test lazy imports from main package."""
@@ -159,6 +169,16 @@ class TestLazyImports:
         """Test lazy import of resolve_adapter_init_plan."""
         from chronicals import resolve_adapter_init_plan
         assert resolve_adapter_init_plan is not None
+
+    def test_lazy_import_compile_policy(self):
+        """Test lazy import of resolve_compile_decision."""
+        from chronicals import resolve_compile_decision
+        assert resolve_compile_decision is not None
+
+    def test_lazy_import_checkpoint_helper(self):
+        """Test lazy import of load_adapter_checkpoint."""
+        from chronicals import load_adapter_checkpoint
+        assert load_adapter_checkpoint is not None
 
 
 class TestKernelImports:
