@@ -17,6 +17,8 @@ These features are intended for model adaptation and systems optimization only. 
 | `TrainingConfig.use_stable_lora` | `False` | optimizer-step hooks | Enables Stable-LoRA shrinkage during early steps |
 | `TrainingConfig.stable_lora_steps` | `100` | optimizer-step hooks | Number of steps to apply Stable-LoRA |
 | `TrainingConfig.stable_lora_max_shrinkage` | `0.1` | optimizer-step hooks | Total shrinkage budget for `lora_A` |
+| `chronicals.lora.resolve_adapter_init_plan()` | n/a | adapter setup | Resolves safe init policy for PiSSA/LoftQ/RSLoRA |
+| `chronicals.lora.apply_qwen_loftq_fallback()` | n/a | adapter setup | Applies LoftQ weights for Qwen-style checkpoint layouts |
 | `chronicals.training.resolve_compile_decision()` | n/a | policy helper | Resolves compile compatibility decisions |
 | `chronicals.training.load_adapter_checkpoint()` | n/a | checkpoint helper | Loads only adapter weights from `model.pt` |
 | `chronicals.lora.create_stable_lora_callback()` | n/a | hook factory | Creates a post-step Stable-LoRA hook |
@@ -90,6 +92,23 @@ config = TrainingConfig(
 
 This keeps the library contract explicit instead of relying on project-local optimizer replacement code.
 
+### Quantized Adapter Init Policy
+
+For adapter creation stages that happen outside `ChronicalsTrainer`, use the dedicated adapter helper:
+
+```python
+from chronicals.lora import resolve_adapter_init_plan
+
+plan = resolve_adapter_init_plan(
+    init_method="pissa",
+    load_in_4bit=True,
+    prefer_loftq_for_quantized=True,
+    use_rslora=True,
+)
+```
+
+This resolves to a safe plan where PiSSA is disabled for quantized adapters and LoftQ is preferred for 4-bit runs.
+
 ### Optimized Packing
 
 Use the packing utilities directly when you need lazy length-aware packing outside the built-in fixed-shape `SequencePacker`.
@@ -110,6 +129,7 @@ collator = create_optimized_collator(
 - `apply_liger_kernel_to_qwen2` is still the relevant Liger entry point.
 - `use_torch_compile_disable_for_liger=True` remains the safest default.
 - Adapter-only resume is recommended for quantized LoRA checkpoints.
+- `apply_qwen_loftq_fallback()` is available for checkpoints whose tensor keys live under `model.language_model.*`.
 
 ### LLaMA-family LoRA runs
 
