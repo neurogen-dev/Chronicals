@@ -43,6 +43,9 @@ def __getattr__(name):
     elif name == "create_stable_lora_callback":
         from chronicals.lora import create_stable_lora_callback
         return create_stable_lora_callback
+    elif name == "resolve_adapter_init_plan":
+        from chronicals.lora import resolve_adapter_init_plan
+        return resolve_adapter_init_plan
     elif name == "resolve_compile_decision":
         from chronicals.training import resolve_compile_decision
         return resolve_compile_decision
@@ -106,6 +109,7 @@ __all__ = [
     "LoRAPlusOptimizer",
     "SequencePacker",
     "create_stable_lora_callback",
+    "resolve_adapter_init_plan",
     "resolve_compile_decision",
     "get_version",
     "get_device_info",
