@@ -39,6 +39,7 @@ from contextlib import contextmanager
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pytest
 
 # Suppress warnings for cleaner test output
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -70,6 +71,7 @@ class TestConfig:
 
 # Global test config
 TEST_CONFIG = TestConfig()
+RUN_HEAVY_TESTS = os.environ.get("CHRONICALS_RUN_HEAVY_TESTS") == "1"
 
 
 # =============================================================================
@@ -280,7 +282,7 @@ class TestCutCrossEntropy(unittest.TestCase):
         )
 
         # CCE (chunked version)
-        from COLAB_LORA_TRAINER import CutCrossEntropyLoss
+        from chronicals.kernels.cut_cross_entropy import CutCrossEntropyLoss
         cce = CutCrossEntropyLoss(chunk_size=256)
         cce_loss = cce(hidden_states, lm_head_weight, labels)
 
@@ -327,7 +329,7 @@ class TestCutCrossEntropy(unittest.TestCase):
         labels = torch.randint(0, vocab_size, (batch_size, seq_len), device="cuda")
 
         torch.cuda.reset_peak_memory_stats()
-        from COLAB_LORA_TRAINER import CutCrossEntropyLoss
+        from chronicals.kernels.cut_cross_entropy import CutCrossEntropyLoss
         cce = CutCrossEntropyLoss(chunk_size=4096)
         _ = cce(hidden_states, lm_head_weight, labels)
         cce_memory = torch.cuda.max_memory_allocated()
@@ -401,6 +403,8 @@ class TestFusedAdamW(unittest.TestCase):
 # INTEGRATION TESTS: Combined Optimizations
 # =============================================================================
 
+@pytest.mark.heavy
+@unittest.skipUnless(RUN_HEAVY_TESTS, "set CHRONICALS_RUN_HEAVY_TESTS=1 to run heavy integration tests")
 class TestIntegration(unittest.TestCase):
     """Integration tests for combined optimizations."""
 
@@ -531,6 +535,8 @@ class TestIntegration(unittest.TestCase):
 # MEMORY VALIDATION TESTS
 # =============================================================================
 
+@pytest.mark.heavy
+@unittest.skipUnless(RUN_HEAVY_TESTS, "set CHRONICALS_RUN_HEAVY_TESTS=1 to run heavy memory tests")
 class TestMemoryValidation(unittest.TestCase):
     """Test memory usage is within expected bounds."""
 
@@ -596,6 +602,8 @@ class TestMemoryValidation(unittest.TestCase):
 # CORRECTNESS VALIDATION TESTS
 # =============================================================================
 
+@pytest.mark.heavy
+@unittest.skipUnless(RUN_HEAVY_TESTS, "set CHRONICALS_RUN_HEAVY_TESTS=1 to run heavy correctness tests")
 class TestCorrectnessValidation(unittest.TestCase):
     """Test that optimizations don't degrade accuracy."""
 
@@ -736,6 +744,8 @@ class TestCorrectnessValidation(unittest.TestCase):
 # PERFORMANCE BENCHMARK TESTS
 # =============================================================================
 
+@pytest.mark.heavy
+@unittest.skipUnless(RUN_HEAVY_TESTS, "set CHRONICALS_RUN_HEAVY_TESTS=1 to run heavy benchmark tests")
 class TestPerformanceBenchmarks(unittest.TestCase):
     """Performance benchmark tests."""
 

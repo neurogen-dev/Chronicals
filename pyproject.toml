@@ -168,3 +168,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+markers = [
+    "gpu: requires CUDA-capable hardware",
+    "heavy: requires external model downloads and is excluded from default smoke validation",
+]
