@@ -40,6 +40,12 @@ def __getattr__(name):
     elif name == "SequencePacker":
         from chronicals.data.sequence_packer import SequencePacker
         return SequencePacker
+    elif name == "create_stable_lora_callback":
+        from chronicals.lora import create_stable_lora_callback
+        return create_stable_lora_callback
+    elif name == "resolve_compile_decision":
+        from chronicals.training import resolve_compile_decision
+        return resolve_compile_decision
     raise AttributeError(f"module 'chronicals' has no attribute '{name}'")
 
 
@@ -99,6 +105,8 @@ __all__ = [
     "ChronicalsConfig",
     "LoRAPlusOptimizer",
     "SequencePacker",
+    "create_stable_lora_callback",
+    "resolve_compile_decision",
     "get_version",
     "get_device_info",
     "print_info",

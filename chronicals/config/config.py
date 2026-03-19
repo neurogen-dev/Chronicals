@@ -290,6 +290,7 @@ class TrainingConfig:
     visual_reporting: bool = True
     report_every_n_steps: int = 100
     log_progress_pct: bool = True
+    log_progress_flush: bool = True
 
     # ========== Reproducibility ==========
     seed: int = 42
@@ -334,6 +335,13 @@ class TrainingConfig:
     # Compile optimizer.step() for additional 10-15% speedup
     torch_compile_optimizer: bool = True
     resume_quantized_lora_only: bool = False
+
+    # ========== LoRA Training Extensions ==========
+    use_lora_plus: bool = False
+    lora_plus_lr_ratio: float = 16.0
+    use_stable_lora: bool = False
+    stable_lora_steps: int = 100
+    stable_lora_max_shrinkage: float = 0.1
 
     # ========== torch.compile Advanced Settings (Inductor/Triton) ==========
     # Triton autotune cache directory (MASSIVE speedup on subsequent runs)

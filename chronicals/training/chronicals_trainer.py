@@ -30,13 +30,22 @@ from torch.utils.data import DataLoader
 from typing import Dict, List, Optional, Any, Callable, Union
 import time
 import os
+import sys
 import math
 import inspect
 from dataclasses import dataclass
 
 from chronicals.config.config import ChronicalsConfig, TrainingConfig, HF_WRITE_TOKEN
+from chronicals.lora import create_stable_lora_callback
 from chronicals.utils.fp8_utils import FP8Handler
 from .gradient_checkpointing import apply_gradient_checkpointing
+from .checkpoint_policies import (
+    load_adapter_checkpoint,
+    restore_trainer_state,
+    write_checkpoint_manifest,
+)
+from .compile_policy import resolve_compile_decision
+from .step_hooks import run_optimizer_step_hooks
 
 # Import FlashAttention-3 optimizer for SOTA performance (arXiv:2407.08608)
 # Provides: persistent kernels, ping-pong scheduling, warp specialization,
@@ -470,6 +479,9 @@ class ChronicalsTrainer:
 
         # ========== Learning Rate Scheduler ==========
         self._setup_scheduler()
+
+        # ========== Optimizer-Step Hooks ==========
+        self._configure_optimizer_step_hooks()
 
         # ========== FP8 Handler (DeepSeek V3 Style) ==========
         self.fp8_handler = None
@@ -941,39 +953,28 @@ class ChronicalsTrainer:
         - https://huggingface.co/docs/transformers/en/perf_torch_compile
         - https://docs.pytorch.org/tutorials/intermediate/torch_compile_tutorial.html
         """
-        if not self.args.use_torch_compile or not hasattr(torch, 'compile'):
-            self.is_compiled = False
-            return
-
-        # Check for emergency disable
-        if getattr(self.args, 'torch_compile_disable', False):
-            print("  [--] torch.compile disabled via config")
-            self.is_compiled = False
-            return
-
-        # CRITICAL: Check Liger Kernel compatibility - skip torch.compile when Liger + disable flag
         use_liger = getattr(self, 'use_liger', False) or getattr(self.args, 'use_liger_kernel', False)
-        if use_liger and getattr(self.args, 'use_torch_compile_disable_for_liger', True):
-            print("  [--] torch.compile disabled for Liger compatibility")
+        decision = resolve_compile_decision(
+            self.args,
+            torch_compile_available=hasattr(torch, 'compile'),
+            use_liger=use_liger,
+        )
+        if not decision.enabled:
+            print(f"  [--] {decision.reason}")
             self.is_compiled = False
             return
 
         try:
             # Get compile options with research-backed defaults
-            use_liger = getattr(self, 'use_liger', False) or getattr(self.args, 'use_liger_kernel', False)
-            mode = getattr(self.args, 'torch_compile_mode', 'default')
-            fullgraph = getattr(self.args, 'torch_compile_fullgraph', False)
-            backend = getattr(self.args, 'torch_compile_backend', 'inductor')
-            dynamic = getattr(self.args, 'torch_compile_dynamic', None)
-            use_regional = getattr(self.args, 'torch_compile_regional', True)
+            mode = decision.mode
+            fullgraph = decision.fullgraph
+            backend = decision.backend
+            dynamic = decision.dynamic
+            use_regional = decision.use_regional
 
-            # CRITICAL: Handle Liger Kernel + torch.compile compatibility
-            # reduce-overhead uses CUDA graphs which conflict with Liger's dynamic Triton kernels
-            # This can cause 3-4x SLOWDOWN due to graph breaks and recompilation
-            if use_liger and mode == 'reduce-overhead':
-                print("  [WARN] torch.compile reduce-overhead conflicts with Liger Kernel!")
+            if decision.adjusted:
+                print(f"  [WARN] {decision.reason}")
                 print("         Switching to 'default' mode for compatibility")
-                mode = 'default'
 
             # Configure dynamo for better compatibility with HuggingFace models
             # and custom Triton kernels
@@ -1096,6 +1097,27 @@ class ChronicalsTrainer:
         except Exception as e:
             print(f"  [--] torch.compile failed: {e}")
             self.is_compiled = False
+
+    def _configure_optimizer_step_hooks(self):
+        """Register built-in post-step hooks from the training config."""
+        if getattr(self.args, "use_stable_lora", False):
+            self.callbacks.append(
+                create_stable_lora_callback(
+                    total_shrinkage_steps=getattr(self.args, "stable_lora_steps", 100),
+                    max_shrinkage=getattr(self.args, "stable_lora_max_shrinkage", 0.1),
+                )
+            )
+            print("  [OK] Stable-LoRA optimizer-step hook")
+
+    def _run_optimizer_step_hooks(self):
+        """Run post-step hooks after a successful optimizer update."""
+        if not self.callbacks:
+            return
+        run_optimizer_step_hooks(
+            self.callbacks,
+            model=self.model,
+            step=self.state.global_step,
+        )
 
     def _apply_regional_compile(self, compile_kwargs: dict) -> bool:
         """
@@ -1247,8 +1269,24 @@ class ChronicalsTrainer:
         """Setup optimizer with FUSED enabled for maximum speed."""
         optimizer_type = self.args.optimizer_type
         params = [p for p in self.model.parameters() if p.requires_grad]
+        use_lora_plus = getattr(self.args, "use_lora_plus", False)
+        lora_plus_lr_ratio = getattr(self.args, "lora_plus_lr_ratio", 16.0)
 
         self.use_external_grad_clip = True
+
+        if use_lora_plus:
+            try:
+                from chronicals.optimizers.lora_plus_optimizer import get_lora_plus_param_groups
+
+                params = get_lora_plus_param_groups(
+                    self.model,
+                    base_lr=self.args.learning_rate,
+                    lr_ratio=lora_plus_lr_ratio,
+                    weight_decay=self.args.weight_decay,
+                )
+                print(f"  [OK] LoRA+ parameter groups (lr_ratio={lora_plus_lr_ratio:.1f})")
+            except Exception as e:
+                print(f"  [WARN] LoRA+ setup failed ({e})")
 
         if optimizer_type == "fused_adamw" and FUSED_ADAMW_AVAILABLE:
             try:
@@ -1815,6 +1853,7 @@ class ChronicalsTrainer:
                     scheduler.step()
 
                 self.state.global_step += 1
+                self._run_optimizer_step_hooks()
 
                 # Logging (batched - not every step!)
                 if self.state.global_step % logging_steps == 0:
@@ -1958,11 +1997,20 @@ class ChronicalsTrainer:
         # Print minimal info
         step = self.state.global_step
         max_steps = getattr(self.args, 'max_steps', 0)
+        flush_logs = getattr(self.args, 'log_progress_flush', True)
         if getattr(self.args, 'log_progress_pct', True) and max_steps > 0:
             pct = 100.0 * step / max_steps
-            print(f"Step {step}/{max_steps} ({pct:.1f}%): loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}")
+            print(
+                f"Step {step}/{max_steps} ({pct:.1f}%): loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}",
+                flush=flush_logs,
+            )
         else:
-            print(f"Step {step}: loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}")
+            print(
+                f"Step {step}: loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}",
+                flush=flush_logs,
+            )
+        if flush_logs:
+            sys.stdout.flush()
 
         # Log to history (lightweight)
         self.state.log_history.append({
@@ -2047,6 +2095,26 @@ class ChronicalsTrainer:
             os.path.join(checkpoint_dir, "training_history.pt")
         )
 
+        write_checkpoint_manifest(
+            checkpoint_dir,
+            strategy="full_state_dict",
+            artifacts=[
+                artifact
+                for artifact in [
+                    "model.pt",
+                    "optimizer.pt",
+                    "scheduler.pt" if self.scheduler else None,
+                    "trainer_state.pt",
+                    "training_history.pt",
+                ]
+                if artifact
+            ],
+            metadata={
+                "global_step": self.state.global_step,
+                "resume_quantized_lora_only": getattr(self.args, "resume_quantized_lora_only", False),
+            },
+        )
+
         if self.reporter:
             last_loss = self.state.log_history[-1]['loss'] if self.state.log_history else 0
             self.reporter.log_checkpoint(
@@ -2063,44 +2131,24 @@ class ChronicalsTrainer:
         Loads lora_A, lora_B, lora_embedding_A, lora_embedding_B, modules_to_save keys.
         Also loads optimizer, scheduler, trainer_state, training_history if present.
         """
-        model_path = os.path.join(checkpoint_dir, "model.pt")
-        if not os.path.exists(model_path):
+        try:
+            result = load_adapter_checkpoint(self.model, checkpoint_dir, map_location="cpu")
+            print(
+                "  [OK] Loaded "
+                f"{result.loaded_keys} LoRA/adapter keys from checkpoint "
+                f"(missing={result.missing_keys}, unexpected={result.unexpected_keys})"
+            )
+        except FileNotFoundError:
             print(f"  [WARN] model.pt not found in {checkpoint_dir}")
             return
+        except Exception as e:
+            print(f"  [WARN] Adapter-only checkpoint restore failed: {e}")
+            return
 
-        full_state = torch.load(model_path, map_location=self.device)
-        # Filter to LoRA/adapter keys only (PEFT naming)
-        lora_keys = ('lora_A', 'lora_B', 'lora_embedding_A', 'lora_embedding_B', 'modules_to_save')
-        filtered = {k: v for k, v in full_state.items()
-                   if any(key in k for key in lora_keys)}
-        if filtered:
-            self.model.load_state_dict(filtered, strict=False)
-            print(f"  [OK] Loaded {len(filtered)} LoRA/adapter keys from checkpoint")
-        else:
-            print("  [WARN] No LoRA keys found in model.pt")
-
-        if os.path.exists(os.path.join(checkpoint_dir, "optimizer.pt")):
-            self.optimizer.load_state_dict(
-                torch.load(os.path.join(checkpoint_dir, "optimizer.pt"), map_location=self.device)
-            )
-        if os.path.exists(os.path.join(checkpoint_dir, "scheduler.pt")) and self.scheduler:
-            self.scheduler.load_state_dict(
-                torch.load(os.path.join(checkpoint_dir, "scheduler.pt"), map_location=self.device)
-            )
-        if os.path.exists(os.path.join(checkpoint_dir, "trainer_state.pt")):
-            state = torch.load(os.path.join(checkpoint_dir, "trainer_state.pt"), map_location=self.device)
-            if isinstance(state, tuple):
-                state = state[0]
-            self.state.global_step = state.get('global_step', self.state.global_step)
-            self.state.epoch = state.get('epoch', self.state.epoch)
-            self.state.best_loss = state.get('best_loss', self.state.best_loss)
-            self.state.total_tokens = state.get('total_tokens', self.state.total_tokens)
-            self.state.total_time = state.get('total_time', self.state.total_time)
-        if os.path.exists(os.path.join(checkpoint_dir, "training_history.pt")):
-            hist = torch.load(os.path.join(checkpoint_dir, "training_history.pt"), map_location='cpu')
-            if isinstance(hist, tuple):
-                hist = hist[0]
-            self.state.log_history = hist
+        try:
+            restore_trainer_state(self, checkpoint_dir)
+        except Exception as e:
+            print(f"  [WARN] Trainer state restore partially skipped: {e}")
 
     def load_checkpoint(self, checkpoint_dir: str):
         """Load checkpoint."""
