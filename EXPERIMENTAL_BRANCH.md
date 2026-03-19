@@ -16,7 +16,12 @@ This branch contains training and optimization improvements for specific hardwar
 
 ## Documentation
 
-See [docs/EXPERIMENTAL_IMPROVEMENTS.md](docs/EXPERIMENTAL_IMPROVEMENTS.md) for full bilingual (EN/RU) documentation.
+See:
+
+- [docs/EXPERIMENTAL_IMPROVEMENTS.en.md](docs/EXPERIMENTAL_IMPROVEMENTS.en.md)
+- [docs/EXPERIMENTAL_IMPROVEMENTS.ru.md](docs/EXPERIMENTAL_IMPROVEMENTS.ru.md)
+
+The documentation is library-oriented and focuses on training methods, optimizer hooks, checkpoint strategies, and model-specific compatibility notes.
 
 ## Installation
 

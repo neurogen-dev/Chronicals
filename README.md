@@ -26,6 +26,7 @@
   - [3. FlashAttention Integration](#3-flashattention-integration)
   - [4. LoRA+ Optimizer](#4-lora-optimizer-differential-learning-rates)
   - [5. Sequence Packing](#5-sequence-packing)
+- [Experimental Training Methods](#experimental-training-methods)
 - [Benchmarks](#benchmarks)
 - [Mathematical Foundations](#mathematical-foundations)
 - [API Reference](#api-reference)
@@ -724,6 +725,25 @@ attention_mask = packer.create_attention_mask(
 <p align="center">
   <img src="https://raw.githubusercontent.com/Ajwebdevs/Chronicals/main/paper/figures/Figure_13_packing_impact.png" alt="Packing Impact" width="600"/>
 </p>
+
+---
+
+## Experimental Training Methods
+
+The `experimental` branch also exposes library-facing methods for:
+
+- compile compatibility policies
+- adapter-only checkpoint resume for quantized LoRA
+- Stable-LoRA optimizer-step hooks
+- LoRA+ trainer integration
+- lazy optimized packing utilities
+
+Documentation:
+
+- English: [docs/EXPERIMENTAL_IMPROVEMENTS.en.md](docs/EXPERIMENTAL_IMPROVEMENTS.en.md)
+- Русский: [docs/EXPERIMENTAL_IMPROVEMENTS.ru.md](docs/EXPERIMENTAL_IMPROVEMENTS.ru.md)
+
+These guides describe only training and optimization methods. They intentionally avoid project-specific dataset or data-collection workflows.
 
 ---
 
