@@ -388,7 +388,7 @@ class ChronicalsTrainer:
     - torch.compile with fullgraph=False, suppress_errors=True (HF compatible)
     - Fused AdamW (fused=True parameter)
     - Minimal Python overhead in hot loop
-    - torch.cuda.amp.autocast for mixed precision
+    - torch.amp.autocast('cuda', ...) for mixed precision
     - No logging in hot path (batched logging only)
     - Pre-allocated tensors where possible
     """
@@ -951,11 +951,16 @@ class ChronicalsTrainer:
             self.is_compiled = False
             return
 
-        # CRITICAL: Check Liger Kernel compatibility
+        # CRITICAL: Check Liger Kernel compatibility - skip torch.compile when Liger + disable flag
         use_liger = getattr(self, 'use_liger', False) or getattr(self.args, 'use_liger_kernel', False)
+        if use_liger and getattr(self.args, 'use_torch_compile_disable_for_liger', True):
+            print("  [--] torch.compile disabled for Liger compatibility")
+            self.is_compiled = False
+            return
 
         try:
             # Get compile options with research-backed defaults
+            use_liger = getattr(self, 'use_liger', False) or getattr(self.args, 'use_liger_kernel', False)
             mode = getattr(self.args, 'torch_compile_mode', 'default')
             fullgraph = getattr(self.args, 'torch_compile_fullgraph', False)
             backend = getattr(self.args, 'torch_compile_backend', 'inductor')
@@ -1556,7 +1561,7 @@ class ChronicalsTrainer:
                 warmed_shapes.add(seq_len)
 
                 # Forward pass with autocast (triggers forward compilation)
-                with torch.cuda.amp.autocast(enabled=self._use_autocast, dtype=self._autocast_dtype):
+                with torch.amp.autocast('cuda', enabled=self._use_autocast, dtype=self._autocast_dtype):
                     outputs = self.model(
                         input_ids=batch['input_ids'],
                         attention_mask=batch.get('attention_mask'),
@@ -1597,7 +1602,7 @@ class ChronicalsTrainer:
                         dummy_ids = torch.randint(0, 1000, (batch_size, bucket_seq), device=self.device)
                         dummy_labels = torch.randint(0, 1000, (batch_size, bucket_seq), device=self.device)
 
-                        with torch.cuda.amp.autocast(enabled=self._use_autocast, dtype=self._autocast_dtype):
+                        with torch.amp.autocast('cuda', enabled=self._use_autocast, dtype=self._autocast_dtype):
                             with torch.no_grad():  # No grad for bucket warmup
                                 outputs = self.model(input_ids=dummy_ids, labels=dummy_labels)
 
@@ -1744,7 +1749,7 @@ class ChronicalsTrainer:
                 attention_mask = None
 
             # Forward pass with autocast
-            with torch.cuda.amp.autocast(enabled=use_autocast, dtype=autocast_dtype):
+            with torch.amp.autocast('cuda', enabled=use_autocast, dtype=autocast_dtype):
                 # Use CCE if enabled - computes loss WITHOUT materializing full logits
                 if self.use_cce and self.cce_loss_fn is not None:
                     # Forward pass WITHOUT computing loss (get hidden states)
@@ -1868,7 +1873,7 @@ class ChronicalsTrainer:
         if self.args.use_sequence_packing and hasattr(self.model, 'config'):
             attention_mask = None
 
-        with torch.cuda.amp.autocast(enabled=self._use_autocast, dtype=self._autocast_dtype):
+        with torch.amp.autocast('cuda', enabled=self._use_autocast, dtype=self._autocast_dtype):
             # Use CCE if enabled - computes loss WITHOUT materializing full logits
             if self.use_cce and self.cce_loss_fn is not None:
                 # Forward pass WITHOUT computing loss (no labels)
@@ -1951,7 +1956,13 @@ class ChronicalsTrainer:
             lr = self.optimizer.param_groups[0]['lr']
 
         # Print minimal info
-        print(f"Step {self.state.global_step}: loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}")
+        step = self.state.global_step
+        max_steps = getattr(self.args, 'max_steps', 0)
+        if getattr(self.args, 'log_progress_pct', True) and max_steps > 0:
+            pct = 100.0 * step / max_steps
+            print(f"Step {step}/{max_steps} ({pct:.1f}%): loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}")
+        else:
+            print(f"Step {step}: loss={loss:.4f}, lr={lr:.2e}, tok/s={tokens_per_sec:,.0f}")
 
         # Log to history (lightweight)
         self.state.log_history.append({
@@ -1994,7 +2005,7 @@ class ChronicalsTrainer:
         with torch.no_grad():
             for batch in self.eval_dataloader:
                 batch = self._prepare_batch(batch)
-                with torch.cuda.amp.autocast(enabled=self._use_autocast, dtype=self._autocast_dtype):
+                with torch.amp.autocast('cuda', enabled=self._use_autocast, dtype=self._autocast_dtype):
                     outputs = self.model(
                         input_ids=batch['input_ids'],
                         attention_mask=batch.get('attention_mask'),
@@ -2046,8 +2057,58 @@ class ChronicalsTrainer:
 
         print(f"Saved checkpoint: {checkpoint_dir}")
 
+    def _resume_quantized_lora_checkpoint(self, checkpoint_dir: str):
+        """
+        Load only LoRA adapter weights from checkpoint (for quantized base + LoRA).
+        Loads lora_A, lora_B, lora_embedding_A, lora_embedding_B, modules_to_save keys.
+        Also loads optimizer, scheduler, trainer_state, training_history if present.
+        """
+        model_path = os.path.join(checkpoint_dir, "model.pt")
+        if not os.path.exists(model_path):
+            print(f"  [WARN] model.pt not found in {checkpoint_dir}")
+            return
+
+        full_state = torch.load(model_path, map_location=self.device)
+        # Filter to LoRA/adapter keys only (PEFT naming)
+        lora_keys = ('lora_A', 'lora_B', 'lora_embedding_A', 'lora_embedding_B', 'modules_to_save')
+        filtered = {k: v for k, v in full_state.items()
+                   if any(key in k for key in lora_keys)}
+        if filtered:
+            self.model.load_state_dict(filtered, strict=False)
+            print(f"  [OK] Loaded {len(filtered)} LoRA/adapter keys from checkpoint")
+        else:
+            print("  [WARN] No LoRA keys found in model.pt")
+
+        if os.path.exists(os.path.join(checkpoint_dir, "optimizer.pt")):
+            self.optimizer.load_state_dict(
+                torch.load(os.path.join(checkpoint_dir, "optimizer.pt"), map_location=self.device)
+            )
+        if os.path.exists(os.path.join(checkpoint_dir, "scheduler.pt")) and self.scheduler:
+            self.scheduler.load_state_dict(
+                torch.load(os.path.join(checkpoint_dir, "scheduler.pt"), map_location=self.device)
+            )
+        if os.path.exists(os.path.join(checkpoint_dir, "trainer_state.pt")):
+            state = torch.load(os.path.join(checkpoint_dir, "trainer_state.pt"), map_location=self.device)
+            if isinstance(state, tuple):
+                state = state[0]
+            self.state.global_step = state.get('global_step', self.state.global_step)
+            self.state.epoch = state.get('epoch', self.state.epoch)
+            self.state.best_loss = state.get('best_loss', self.state.best_loss)
+            self.state.total_tokens = state.get('total_tokens', self.state.total_tokens)
+            self.state.total_time = state.get('total_time', self.state.total_time)
+        if os.path.exists(os.path.join(checkpoint_dir, "training_history.pt")):
+            hist = torch.load(os.path.join(checkpoint_dir, "training_history.pt"), map_location='cpu')
+            if isinstance(hist, tuple):
+                hist = hist[0]
+            self.state.log_history = hist
+
     def load_checkpoint(self, checkpoint_dir: str):
         """Load checkpoint."""
+        if getattr(self.args, 'resume_quantized_lora_only', False):
+            self._resume_quantized_lora_checkpoint(checkpoint_dir)
+            print(f"Loaded checkpoint (LoRA-only) from: {checkpoint_dir}")
+            return
+
         self.model.load_state_dict(
             torch.load(os.path.join(checkpoint_dir, "model.pt"), map_location=self.device)
         )

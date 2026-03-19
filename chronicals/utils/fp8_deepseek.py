@@ -1371,6 +1371,7 @@ def convert_linear_to_fp8(
         if module.bias is not None:
             fp8_linear.bias.copy_(module.bias)
 
+    fp8_linear = fp8_linear.to(module.weight.device)
     return fp8_linear
 
 

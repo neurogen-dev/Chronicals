@@ -289,6 +289,7 @@ class TrainingConfig:
     eval_steps: int = 500
     visual_reporting: bool = True
     report_every_n_steps: int = 100
+    log_progress_pct: bool = True
 
     # ========== Reproducibility ==========
     seed: int = 42
@@ -321,6 +322,7 @@ class TrainingConfig:
     torch_compile_backend: str = "inductor"  # "inductor" (default), "cudagraphs", "eager"
     torch_compile_dynamic: Optional[bool] = None  # None=auto, True=dynamic shapes, False=static
     torch_compile_disable: bool = False  # Emergency disable without code changes
+    use_torch_compile_disable_for_liger: bool = True
     torch_compile_warmup_steps: int = 5  # Warmup before timing (5+ for full JIT warmup)
     #
     # Regional Compilation (2-5x faster cold start):
@@ -331,6 +333,7 @@ class TrainingConfig:
     # Optimizer Compilation (PyTorch 2.2+):
     # Compile optimizer.step() for additional 10-15% speedup
     torch_compile_optimizer: bool = True
+    resume_quantized_lora_only: bool = False
 
     # ========== torch.compile Advanced Settings (Inductor/Triton) ==========
     # Triton autotune cache directory (MASSIVE speedup on subsequent runs)
