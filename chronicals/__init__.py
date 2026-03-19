@@ -40,12 +40,18 @@ def __getattr__(name):
     elif name == "SequencePacker":
         from chronicals.data.sequence_packer import SequencePacker
         return SequencePacker
+    elif name == "create_optimized_dataloader":
+        from chronicals.data import create_optimized_dataloader
+        return create_optimized_dataloader
     elif name == "resolve_packing_plan":
         from chronicals.data import resolve_packing_plan
         return resolve_packing_plan
     elif name == "create_stable_lora_callback":
         from chronicals.lora import create_stable_lora_callback
         return create_stable_lora_callback
+    elif name == "apply_qwen_loftq_fallback":
+        from chronicals.lora import apply_qwen_loftq_fallback
+        return apply_qwen_loftq_fallback
     elif name == "resolve_adapter_init_plan":
         from chronicals.lora import resolve_adapter_init_plan
         return resolve_adapter_init_plan
@@ -111,8 +117,10 @@ __all__ = [
     "ChronicalsConfig",
     "LoRAPlusOptimizer",
     "SequencePacker",
+    "create_optimized_dataloader",
     "resolve_packing_plan",
     "create_stable_lora_callback",
+    "apply_qwen_loftq_fallback",
     "resolve_adapter_init_plan",
     "resolve_compile_decision",
     "get_version",

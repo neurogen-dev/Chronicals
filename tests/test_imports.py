@@ -83,6 +83,30 @@ class TestDataImports:
         from chronicals.data import PackedBatch
         assert PackedBatch is not None
 
+    def test_import_optimized_dataloader_factory(self):
+        """Test optimized dataloader factory import."""
+        from chronicals.data import create_optimized_dataloader
+        assert create_optimized_dataloader is not None
+
+    def test_import_packing_policy(self):
+        """Test packing policy helper import."""
+        from chronicals.data import resolve_packing_plan
+        assert resolve_packing_plan is not None
+
+
+class TestLoRAImports:
+    """Test LoRA helper imports."""
+
+    def test_import_stable_lora_callback(self):
+        """Test Stable-LoRA callback import."""
+        from chronicals.lora import create_stable_lora_callback
+        assert create_stable_lora_callback is not None
+
+    def test_import_adapter_init_policy(self):
+        """Test adapter init policy import."""
+        from chronicals.lora import resolve_adapter_init_plan
+        assert resolve_adapter_init_plan is not None
+
 
 class TestTrainingImports:
     """Test training module imports."""
@@ -115,6 +139,26 @@ class TestLazyImports:
         """Test lazy import of SequencePacker."""
         from chronicals import SequencePacker
         assert SequencePacker is not None
+
+    def test_lazy_import_optimized_dataloader_factory(self):
+        """Test lazy import of create_optimized_dataloader."""
+        from chronicals import create_optimized_dataloader
+        assert create_optimized_dataloader is not None
+
+    def test_lazy_import_packing_policy(self):
+        """Test lazy import of resolve_packing_plan."""
+        from chronicals import resolve_packing_plan
+        assert resolve_packing_plan is not None
+
+    def test_lazy_import_stable_lora_callback(self):
+        """Test lazy import of create_stable_lora_callback."""
+        from chronicals import create_stable_lora_callback
+        assert create_stable_lora_callback is not None
+
+    def test_lazy_import_adapter_init_policy(self):
+        """Test lazy import of resolve_adapter_init_plan."""
+        from chronicals import resolve_adapter_init_plan
+        assert resolve_adapter_init_plan is not None
 
 
 class TestKernelImports:
