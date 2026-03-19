@@ -31,6 +31,20 @@
 
 ## Рекомендуемое использование
 
+### Top-Level Imports
+
+Основные experimental helper’ы также экспортируются из корня пакета:
+
+```python
+from chronicals import (
+    create_optimized_dataloader,
+    create_stable_lora_callback,
+    resolve_adapter_init_plan,
+    resolve_compile_decision,
+    resolve_packing_plan,
+)
+```
+
 ### Liger + torch.compile
 
 Если вы отдельно не профилировали конкретный стек модели, оставляйте дефолтную policy-конфигурацию.
@@ -140,6 +154,12 @@ plan = resolve_packing_plan(
 ```
 
 Так выбор packing path остаётся вне `ChronicalsTrainer`, и trainer не начинает мутировать уже собранные data loaders.
+
+Если нужен готовый библиотечный entry point, который уже применяет resolved packing runtime, используйте:
+
+```python
+from chronicals import create_optimized_dataloader
+```
 
 ## Заметки по совместимости
 

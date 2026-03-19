@@ -743,6 +743,18 @@ Documentation:
 - English: [docs/EXPERIMENTAL_IMPROVEMENTS.en.md](docs/EXPERIMENTAL_IMPROVEMENTS.en.md)
 - Русский: [docs/EXPERIMENTAL_IMPROVEMENTS.ru.md](docs/EXPERIMENTAL_IMPROVEMENTS.ru.md)
 
+Top-level imports are available for the main experimental helpers:
+
+```python
+from chronicals import (
+    create_optimized_dataloader,
+    create_stable_lora_callback,
+    resolve_adapter_init_plan,
+    resolve_compile_decision,
+    resolve_packing_plan,
+)
+```
+
 These guides describe only training and optimization methods. They intentionally avoid project-specific dataset or data-collection workflows.
 
 ---

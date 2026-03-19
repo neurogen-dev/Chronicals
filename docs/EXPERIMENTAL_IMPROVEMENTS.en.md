@@ -31,6 +31,20 @@ These features are intended for model adaptation and systems optimization only. 
 
 ## Recommended Usage
 
+### Top-Level Imports
+
+The main experimental helpers are also exported from the package root:
+
+```python
+from chronicals import (
+    create_optimized_dataloader,
+    create_stable_lora_callback,
+    resolve_adapter_init_plan,
+    resolve_compile_decision,
+    resolve_packing_plan,
+)
+```
+
 ### Liger + torch.compile
 
 Use the default compatibility policy unless you have already profiled your specific model stack.
@@ -140,6 +154,12 @@ plan = resolve_packing_plan(
 ```
 
 This keeps packing selection out of `ChronicalsTrainer` and avoids mutating already-constructed data loaders inside the trainer.
+
+If you want a library entry point that already applies the resolved packing runtime, use:
+
+```python
+from chronicals import create_optimized_dataloader
+```
 
 ## Compatibility Notes
 

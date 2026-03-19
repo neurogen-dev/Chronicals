@@ -38,3 +38,18 @@ Add to your `TrainingConfig`:
 - `use_torch_compile_disable_for_liger=True` — skip compile when Liger enabled
 - `log_progress_pct=True` — show progress percentage in logs
 - `resume_quantized_lora_only=True` — load only LoRA keys when resuming quantized training
+- `packing_runtime="fixed_shape" | "lazy_collator" | "auto"` — choose the packing runtime at the data layer
+
+## Public Helper APIs
+
+Top-level imports are available for the main experimental helpers:
+
+```python
+from chronicals import (
+    create_optimized_dataloader,
+    create_stable_lora_callback,
+    resolve_adapter_init_plan,
+    resolve_compile_decision,
+    resolve_packing_plan,
+)
+```
