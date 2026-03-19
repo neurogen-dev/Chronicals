@@ -17,11 +17,15 @@ These features are intended for model adaptation and systems optimization only. 
 | `TrainingConfig.use_stable_lora` | `False` | optimizer-step hooks | Enables Stable-LoRA shrinkage during early steps |
 | `TrainingConfig.stable_lora_steps` | `100` | optimizer-step hooks | Number of steps to apply Stable-LoRA |
 | `TrainingConfig.stable_lora_max_shrinkage` | `0.1` | optimizer-step hooks | Total shrinkage budget for `lora_A` |
+| `TrainingConfig.packing_runtime` | `fixed_shape` | data loading | Selects fixed-shape, lazy-collator, or auto packing runtime |
+| `TrainingConfig.lazy_packing_min_samples` | `50000` | data loading | Auto-switch threshold for dataset size |
+| `TrainingConfig.lazy_packing_min_length` | `4096` | data loading | Auto-switch threshold for sequence length |
 | `chronicals.lora.resolve_adapter_init_plan()` | n/a | adapter setup | Resolves safe init policy for PiSSA/LoftQ/RSLoRA |
 | `chronicals.lora.apply_qwen_loftq_fallback()` | n/a | adapter setup | Applies LoftQ weights for Qwen-style checkpoint layouts |
 | `chronicals.training.resolve_compile_decision()` | n/a | policy helper | Resolves compile compatibility decisions |
 | `chronicals.training.load_adapter_checkpoint()` | n/a | checkpoint helper | Loads only adapter weights from `model.pt` |
 | `chronicals.lora.create_stable_lora_callback()` | n/a | hook factory | Creates a post-step Stable-LoRA hook |
+| `chronicals.data.resolve_packing_plan()` | n/a | data loading | Resolves packing runtime without touching trainer internals |
 | `chronicals.data.DynamicBucketingPacker` | n/a | packing | Length-aware packing utility |
 | `chronicals.data.ChunkedPackingCollator` | n/a | packing | Lazy chunking + packing collator |
 
@@ -121,6 +125,21 @@ collator = create_optimized_collator(
     pad_token_id=0,
 )
 ```
+
+If you want Chronicals to select between fixed-shape packing and lazy collator mode at the data-layer, use the runtime policy:
+
+```python
+from chronicals.data import resolve_packing_plan
+
+plan = resolve_packing_plan(
+    use_packing=True,
+    packing_runtime="auto",
+    dataset_size=60000,
+    max_length=4096,
+)
+```
+
+This keeps packing selection out of `ChronicalsTrainer` and avoids mutating already-constructed data loaders inside the trainer.
 
 ## Compatibility Notes
 

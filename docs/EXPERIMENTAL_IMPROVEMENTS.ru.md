@@ -17,11 +17,15 @@
 | `TrainingConfig.use_stable_lora` | `False` | post-step hooks | Включает Stable-LoRA shrinkage на ранних шагах |
 | `TrainingConfig.stable_lora_steps` | `100` | post-step hooks | Число шагов применения Stable-LoRA |
 | `TrainingConfig.stable_lora_max_shrinkage` | `0.1` | post-step hooks | Общий бюджет shrinkage для `lora_A` |
+| `TrainingConfig.packing_runtime` | `fixed_shape` | data loading | Выбирает fixed-shape, lazy-collator или auto runtime для packing |
+| `TrainingConfig.lazy_packing_min_samples` | `50000` | data loading | Порог dataset size для auto-switch |
+| `TrainingConfig.lazy_packing_min_length` | `4096` | data loading | Порог длины последовательности для auto-switch |
 | `chronicals.lora.resolve_adapter_init_plan()` | n/a | adapter setup | Разрешает безопасную policy для PiSSA/LoftQ/RSLoRA |
 | `chronicals.lora.apply_qwen_loftq_fallback()` | n/a | adapter setup | Применяет LoftQ-веса для Qwen-style layout checkpoint |
 | `chronicals.training.resolve_compile_decision()` | n/a | policy helper | Разрешает политику совместимости для compile |
 | `chronicals.training.load_adapter_checkpoint()` | n/a | checkpoint helper | Загружает только adapter-веса из `model.pt` |
 | `chronicals.lora.create_stable_lora_callback()` | n/a | factory hook | Создаёт post-step hook для Stable-LoRA |
+| `chronicals.data.resolve_packing_plan()` | n/a | data loading | Разрешает packing runtime, не трогая trainer internals |
 | `chronicals.data.DynamicBucketingPacker` | n/a | packing | Length-aware packing utility |
 | `chronicals.data.ChunkedPackingCollator` | n/a | packing | Lazy chunking + packing collator |
 
@@ -121,6 +125,21 @@ collator = create_optimized_collator(
     pad_token_id=0,
 )
 ```
+
+Если нужно выбирать между fixed-shape packing и lazy collator на уровне data-layer, используйте runtime policy:
+
+```python
+from chronicals.data import resolve_packing_plan
+
+plan = resolve_packing_plan(
+    use_packing=True,
+    packing_runtime="auto",
+    dataset_size=60000,
+    max_length=4096,
+)
+```
+
+Так выбор packing path остаётся вне `ChronicalsTrainer`, и trainer не начинает мутировать уже собранные data loaders.
 
 ## Заметки по совместимости
 
