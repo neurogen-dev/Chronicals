@@ -40,6 +40,9 @@ def __getattr__(name):
     elif name == "SequencePacker":
         from chronicals.data.sequence_packer import SequencePacker
         return SequencePacker
+    elif name == "resolve_packing_plan":
+        from chronicals.data import resolve_packing_plan
+        return resolve_packing_plan
     elif name == "create_stable_lora_callback":
         from chronicals.lora import create_stable_lora_callback
         return create_stable_lora_callback
@@ -108,6 +111,7 @@ __all__ = [
     "ChronicalsConfig",
     "LoRAPlusOptimizer",
     "SequencePacker",
+    "resolve_packing_plan",
     "create_stable_lora_callback",
     "resolve_adapter_init_plan",
     "resolve_compile_decision",

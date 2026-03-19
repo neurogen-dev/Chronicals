@@ -56,6 +56,8 @@ from .sequence_packer import (
     compute_tokens_per_second,
     FLASH_ATTN_AVAILABLE,
 )
+from .optimized_packing import create_optimized_collator
+from .packing_policy import resolve_packing_plan
 
 
 # =============================================================================
@@ -1241,8 +1243,11 @@ def create_optimized_dataloader(
     batch_size: int = 8,
     use_packing: bool = True,
     packing_strategy: str = 'bfd',
+    packing_runtime: str = 'fixed_shape',
     use_prefetching: bool = True,
     device: Optional[torch.device] = None,
+    lazy_packing_min_samples: int = 50_000,
+    lazy_packing_min_length: int = 4096,
     **kwargs,
 ) -> Union[DataLoader, SequencePackerDataLoader]:
     """
@@ -1258,14 +1263,27 @@ def create_optimized_dataloader(
         batch_size: Base batch size
         use_packing: Enable sequence packing for 2-3x throughput
         packing_strategy: Packing algorithm
+        packing_runtime: 'fixed_shape', 'lazy_collator', or 'auto'
         use_prefetching: Enable async GPU prefetching
         device: Target device
+        lazy_packing_min_samples: Auto-switch threshold for dataset size
+        lazy_packing_min_length: Auto-switch threshold for sequence length
         **kwargs: Additional arguments for DataLoader
 
     Returns:
         Optimized DataLoader or SequencePackerDataLoader
     """
-    if use_packing:
+    dataset_size = len(dataset) if hasattr(dataset, "__len__") else None
+    packing_plan = resolve_packing_plan(
+        use_packing=use_packing,
+        packing_runtime=packing_runtime,
+        dataset_size=dataset_size,
+        max_length=max_length,
+        lazy_min_samples=lazy_packing_min_samples,
+        lazy_min_length=lazy_packing_min_length,
+    )
+
+    if packing_plan.runtime == "fixed_shape":
         return create_packed_dataloader(
             dataset=dataset,
             tokenizer=tokenizer,
@@ -1276,6 +1294,39 @@ def create_optimized_dataloader(
             device=device,
             **kwargs,
         )
+    elif packing_plan.runtime == "lazy_collator":
+        collator = create_optimized_collator(
+            max_length=max_length,
+            pad_token_id=tokenizer.pad_token_id or 0,
+        )
+
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            collate_fn=collator,
+            pin_memory=True,
+            **kwargs,
+        )
+
+        if use_prefetching and torch.cuda.is_available():
+            class PrefetchWrapper:
+                def __init__(self, dl, dev):
+                    self.dl = dl
+                    self.dev = dev or torch.device('cuda')
+
+                def __iter__(self):
+                    for batch in self.dl:
+                        yield {
+                            k: v.to(self.dev, non_blocking=True) if isinstance(v, torch.Tensor) else v
+                            for k, v in batch.items()
+                        }
+
+                def __len__(self):
+                    return len(self.dl)
+
+            return PrefetchWrapper(dataloader, device)
+
+        return dataloader
     else:
         # Standard DataLoader with optional prefetching
         collator = DataCollator(

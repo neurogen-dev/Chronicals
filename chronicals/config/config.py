@@ -242,7 +242,10 @@ class TrainingConfig:
     #
     use_sequence_packing: bool = True  # ENABLED: Fixed-shape packer is CUDA graph compatible
     packing_strategy: str = "bfd"  # Best-Fit Decreasing for optimal efficiency
+    packing_runtime: str = "fixed_shape"  # "fixed_shape", "lazy_collator", "auto"
     packing_efficiency_threshold: float = 0.0  # Min efficiency to include batch (0=include all)
+    lazy_packing_min_samples: int = 50_000
+    lazy_packing_min_length: int = 4096
 
     # FlashAttention varlen integration
     # When enabled, uses cu_seqlens for memory-efficient packed attention
